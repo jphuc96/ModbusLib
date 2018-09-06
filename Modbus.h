@@ -1,4 +1,5 @@
-
+#include <vector>
+#include <algorithm>
 #include "mbed.h"
 
 //#define MB_GLOBAL_REGS
@@ -14,6 +15,16 @@
 #define COIL_BOOL(v) (v==0xFF00)
 #define ISTS_VAL(v) (v?0xFF00:0x0000)
 #define ISTS_BOOL(v) (v==0xFF00)
+
+#define nullptr NULL
+
+#define lowByte(w) ((uint8_t) ((w) & 0xff))
+#define highByte(w) ((uint8_t) ((w) >> 8))
+
+#define bitRead(value, bit) (((value) >> (bit)) & 0x01)
+#define bitSet(value, bit) ((value) |= (1UL << (bit)))
+#define bitClear(value, bit) ((value) &= ~(1UL << (bit)))
+#define bitWrite(value, bit, bitvalue) (bitvalue ? bitSet(value, bit) : bitClear(value, bit))
 
 typedef struct TRegister;
 

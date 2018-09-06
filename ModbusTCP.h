@@ -14,7 +14,7 @@
 #define MODBUSTCP_MAX_CLIENTS	  4
 
 // Callback function Type
-typedef bool (*cbModbusConnect)(IPAddress ip);
+typedef bool (*cbModbusConnect)(SocketAddress ip);
 
 typedef struct TTransaction TTransaction;
 
@@ -54,16 +54,16 @@ class ModbusTCP : public Modbus {
 	TTransaction* searchTransaction(uint16_t id);
 	void cleanup(); 	// Free clients if not connected and remove timedout transactions
 	int8_t getFreeClient();    // Returns free slot position
-	int8_t getSlave(IPAddress ip);
-	bool send(IPAddress ip, cbTransaction cb);
+	int8_t getSlave(SocketAddress ip);
+	bool send(SocketAddress ip, cbTransaction cb);
 
 	public:
-	ModbusTCP(EthernetInterface *_eth);
+	ModbusTCP(NetworkInterface* _net) : network(_net);
 	uint16_t lastTransaction();
 	bool isTransaction(uint16_t id);
-	bool isConnected(IPAddress ip);
-	bool connect(IPAddress ip);
-	bool disconnect(IPAddress addr) {}  // Not implemented yet
+	bool isConnected(SocketAddress ip);
+	bool connect(SocketAddress ip);
+	bool disconnect(SocketAddress addr) {}  // Not implemented yet
 	void slave();
 	void master();
 	void task();
@@ -71,14 +71,14 @@ class ModbusTCP : public Modbus {
 
     void onConnect(cbModbusConnect cb = nullptr);
 	void onDisconnect(cbModbusConnect cb = nullptr);
-    IPAddress eventSource();
+    SocketAddress eventSource();
 
-    bool writeCoil(IPAddress ip, uint16_t offset, bool value, cbTransaction cb = nullptr);
-	bool writeHreg(IPAddress ip, uint16_t offset, uint16_t value, cbTransaction cb = nullptr);
-	bool pushCoil(IPAddress ip, uint16_t offset, uint16_t numregs = 1, cbTransaction cb = nullptr);
-	bool pullCoil(IPAddress ip, uint16_t offset, uint16_t numregs = 1, cbTransaction cb = nullptr);
-	bool pullIsts(IPAddress ip, uint16_t offset, uint16_t numregs = 1, cbTransaction cb = nullptr);
-	bool pushHreg(IPAddress ip, uint16_t offset, uint16_t numregs = 1, cbTransaction cb = nullptr);
-	bool pullHreg(IPAddress ip, uint16_t offset, uint16_t numregs = 1, cbTransaction cb = nullptr);
-	bool pullIreg(IPAddress ip, uint16_t offset, uint16_t numregs = 1, cbTransaction cb = nullptr);
+    bool writeCoil(SocketAddress ip, uint16_t offset, bool value, cbTransaction cb = nullptr);
+	bool writeHreg(SocketAddress ip, uint16_t offset, uint16_t value, cbTransaction cb = nullptr);
+	bool pushCoil(SocketAddress ip, uint16_t offset, uint16_t numregs = 1, cbTransaction cb = nullptr);
+	bool pullCoil(SocketAddress ip, uint16_t offset, uint16_t numregs = 1, cbTransaction cb = nullptr);
+	bool pullIsts(SocketAddress ip, uint16_t offset, uint16_t numregs = 1, cbTransaction cb = nullptr);
+	bool pushHreg(SocketAddress ip, uint16_t offset, uint16_t numregs = 1, cbTransaction cb = nullptr);
+	bool pullHreg(SocketAddress ip, uint16_t offset, uint16_t numregs = 1, cbTransaction cb = nullptr);
+	bool pullIreg(SocketAddress ip, uint16_t offset, uint16_t numregs = 1, cbTransaction cb = nullptr);
 };

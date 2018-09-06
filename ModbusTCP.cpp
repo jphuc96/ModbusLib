@@ -5,8 +5,7 @@
 */
 #include "ModbusTCP.h"
 
-ModbusTCP::ModbusTCP(EthernetInterface *_eth) {
-	socket = new TCPSocket();
+ModbusTCP(NetworkInterface* _net) : network(_net) {
 	for (uint8_t i = 0; i < MODBUSTCP_MAX_CLIENTS; i++)
 		client[i] = nullptr;
 }
@@ -24,7 +23,7 @@ void ModbusTCP::begin() {
 	slave();
 }
 
-bool ModbusTCP::connect(IPAddress ip) {
+bool ModbusTCP::connect(SocketAddress ip) {
 	//cleanup();
 	if(getSlave(ip) != -1)
 		return true;
@@ -35,7 +34,7 @@ bool ModbusTCP::connect(IPAddress ip) {
 	return client[p]->connect(ip, MODBUSTCP_PORT);
 }
 
-IPAddress ModbusTCP::eventSource() {		// Returns IP of current processing client query
+SocketAddress ModbusTCP::eventSource() {		// Returns IP of current processing client query
 	if (n >= 0 && n < MODBUSTCP_MAX_CLIENTS && client[n])
 		return client[n]->remoteIP();
 	return INADDR_NONE;
@@ -142,7 +141,7 @@ void ModbusTCP::task() {
 	n = -1;
 }
 
-bool ModbusTCP::send(IPAddress ip, cbTransaction cb) { // Prepare and send ModbusTCP frame. _frame buffer should be filled with Modbus data
+bool ModbusTCP::send(SocketAddress ip, cbTransaction cb) { // Prepare and send ModbusTCP frame. _frame buffer should be filled with Modbus data
 #ifdef MODBUSTCP_MAX_TRANSACIONS
 	if (_trans.size() >= MODBUSTCP_MAX_TRANSACIONS)
 		return false;
@@ -192,7 +191,7 @@ bool ifExpired(TTransaction& t) {
 void ModbusTCP::cleanup() { 	// Free clients if not connected and remove timedout transactions
 	for (uint8_t i = 0; i < MODBUSTCP_MAX_CLIENTS; i++) {
 		if (client[i] && !client[i]->connected()) {
-			IPAddress ip = client[i]->remoteIP();
+			SocketAddress ip = client[i]->remoteIP();
 			delete client[i];
 			client[i] = nullptr;
 			if (cbDisconnect && cbEnabled) 
@@ -218,24 +217,24 @@ int8_t ModbusTCP::getFreeClient() {    // Returns free slot position
 	return -1;
 }
 
-int8_t ModbusTCP::getSlave(IPAddress ip) {
+int8_t ModbusTCP::getSlave(SocketAddress ip) {
 	for (uint8_t i = 0; i < MODBUSTCP_MAX_CLIENTS; i++)
 		if (client[i] && client[i]->connected() && client[i]->remoteIP() == ip && client[i]->localPort() != MODBUSTCP_PORT)
 			return i;
 	return -1;
 }
 
-bool ModbusTCP::writeCoil(IPAddress ip, uint16_t offset, bool value, cbTransaction cb) {
+bool ModbusTCP::writeCoil(SocketAddress ip, uint16_t offset, bool value, cbTransaction cb) {
 	readSlave(COIL(offset), COIL_VAL(value), FC_WRITE_COIL);
 	return send(ip, cb);
    }
 
-bool ModbusTCP::writeHreg(IPAddress ip, uint16_t offset, uint16_t value, cbTransaction cb) {
+bool ModbusTCP::writeHreg(SocketAddress ip, uint16_t offset, uint16_t value, cbTransaction cb) {
 	readSlave(HREG(offset), value, FC_WRITE_REG);
 	return send(ip, cb);
 }
 
-bool ModbusTCP::pushCoil(IPAddress ip, uint16_t offset, uint16_t numregs, cbTransaction cb) {
+bool ModbusTCP::pushCoil(SocketAddress ip, uint16_t offset, uint16_t numregs, cbTransaction cb) {
 	if (numregs < 0x0001 || numregs > 0x007B)
 		return false;
 	//addCoil(offset, numregs);	// Should registers requre to be added there or use existing?
@@ -247,7 +246,7 @@ bool ModbusTCP::pushCoil(IPAddress ip, uint16_t offset, uint16_t numregs, cbTran
 	return send(ip, cb);
 }
 
-bool ModbusTCP::pullCoil(IPAddress ip, uint16_t offset, uint16_t numregs, cbTransaction cb) {
+bool ModbusTCP::pullCoil(SocketAddress ip, uint16_t offset, uint16_t numregs, cbTransaction cb) {
 	if (numregs < 0x0001 || numregs > 0x007B)
 		return false;
 	addCoil(offset, numregs);	// Should registers requre to be added there or use existing?
@@ -255,7 +254,7 @@ bool ModbusTCP::pullCoil(IPAddress ip, uint16_t offset, uint16_t numregs, cbTran
 	return send(ip, cb);
 }
 
-bool ModbusTCP::pullIsts(IPAddress ip, uint16_t offset, uint16_t numregs, cbTransaction cb) {
+bool ModbusTCP::pullIsts(SocketAddress ip, uint16_t offset, uint16_t numregs, cbTransaction cb) {
 	if (numregs < 0x0001 || numregs > 0x007B)
 		return false;
 	addIsts(offset, numregs);	// Should registers requre to be added there or use existing?
@@ -263,7 +262,7 @@ bool ModbusTCP::pullIsts(IPAddress ip, uint16_t offset, uint16_t numregs, cbTran
 	return send(ip, cb);
 }
 
-bool ModbusTCP::pushHreg(IPAddress ip, uint16_t offset, uint16_t numregs, cbTransaction cb) {
+bool ModbusTCP::pushHreg(SocketAddress ip, uint16_t offset, uint16_t numregs, cbTransaction cb) {
 	if (numregs < 0x0001 || numregs > 0x007B)
 		return false;
 	//addCoil(offset, numregs);	// Should registers requre to be added there or use existing?
@@ -275,7 +274,7 @@ bool ModbusTCP::pushHreg(IPAddress ip, uint16_t offset, uint16_t numregs, cbTran
 	return send(ip, cb);
 }
 
-bool ModbusTCP::pullHreg(IPAddress ip, uint16_t offset, uint16_t numregs, cbTransaction cb) {
+bool ModbusTCP::pullHreg(SocketAddress ip, uint16_t offset, uint16_t numregs, cbTransaction cb) {
 	if (numregs < 0x0001 || numregs > 0x007B)
 		return false;
 	addHreg(offset, numregs);	// Should registers requre to be added there or use existing?
@@ -283,7 +282,7 @@ bool ModbusTCP::pullHreg(IPAddress ip, uint16_t offset, uint16_t numregs, cbTran
 	return send(ip, cb);
 }
 
-bool ModbusTCP::pullIreg(IPAddress ip, uint16_t offset, uint16_t numregs, cbTransaction cb) {
+bool ModbusTCP::pullIreg(SocketAddress ip, uint16_t offset, uint16_t numregs, cbTransaction cb) {
 	if (numregs < 0x0001 || numregs > 0x007B)
 		return false;
 	addIreg(offset, numregs);	// Should registers requre to be added there or use existing?
@@ -297,7 +296,7 @@ uint16_t ModbusTCP::lastTransaction() {
 bool ModbusTCP::isTransaction(uint16_t id) { // Check if transaction is in progress (by ID)
 	searchTransaction(id) != nullptr;
 }
-bool ModbusTCP::isConnected(IPAddress ip) {
+bool ModbusTCP::isConnected(SocketAddress ip) {
 	int8_t p = getSlave(ip);
 	return  p != -1;// && client[p]->connected();
 }
