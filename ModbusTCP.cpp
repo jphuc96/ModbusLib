@@ -6,6 +6,7 @@
 #include "ModbusTCP.h"
 
 ModbusTCP(NetworkInterface* _net) : network(_net) {
+	server = new TCPServer();
 	for (uint8_t i = 0; i < MODBUSTCP_MAX_CLIENTS; i++)
 		client[i] = nullptr;
 }
