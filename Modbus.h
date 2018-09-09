@@ -1,8 +1,8 @@
 /*
     Modbus.h - Header for Modbus Base Library
-    Copyright (C) 2014 André Sarmento Barbosa
+    Copyright (C) 2014 Andrï¿½ Sarmento Barbosa
 */
-#include "Arduino.h"
+#include "mbed.h"
 
 #ifndef MODBUS_H
 #define MODBUS_H
@@ -11,7 +11,16 @@
 #define MAX_FRAME   128
 //#define USE_HOLDING_REGISTERS_ONLY
 
-typedef unsigned int u_int;
+typedef uint16_t word;
+typedef uint8_t byte;
+
+#define lowByte(w) ((uint8_t) ((w) & 0xff))
+#define highByte(w) ((uint8_t) ((w) >> 8))
+
+#define bitRead(value, bit) (((value) >> (bit)) & 0x01)
+#define bitSet(value, bit) ((value) |= (1UL << (bit)))
+#define bitClear(value, bit) ((value) &= ~(1UL << (bit)))
+#define bitWrite(value, bit, bitvalue) (bitvalue ? bitSet(value, bit) : bitClear(value, bit))
 
 //Function Codes
 enum {

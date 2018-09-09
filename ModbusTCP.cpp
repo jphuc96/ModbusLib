@@ -2,7 +2,7 @@
     ModbusIP.cpp - Source for Modbus IP Library
     Copyright (C) 2015 André Sarmento Barbosa
 */
-#include "ModbusIP.h"
+#include "ModbusTCP.h"
 
 ModbusIP::ModbusIP():_server(MODBUSIP_PORT) {
 }
