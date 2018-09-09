@@ -1,431 +1,514 @@
 /*
-    Modbus.cpp - Modbus Base Library Implementation
-    Copyright (C) 2014 Andrï¿½ Sarmento Barbosa
-                  2017-2018 Alexander Emelianov (a.m.emelianov@gmail.com)
+    Modbus.cpp - Source for Modbus Base Library
+    Copyright (C) 2014 André Sarmento Barbosa
 */
 #include "Modbus.h"
 
-#ifdef MB_GLOBAL_REGS
-std::vector<TRegister> _regs;
-#endif
-
-uint16_t cbDefault(TRegister* reg, uint16_t val) {
-	return val;
+Modbus::Modbus() {
+    _regs_head = 0;
+    _regs_last = 0;
 }
 
-TRegister* Modbus::searchRegister(TAddress address) {
-    const TRegister tmp = {address, 0, cbDefault, cbDefault};
-    std::vector<TRegister>::iterator it = std::find(_regs.begin(), _regs.end(), tmp);
-    if (it != _regs.end()) return &*it;
-    return nullptr;
+TRegister* Modbus::searchRegister(word address) {
+    TRegister *reg = _regs_head;
+    //if there is no register configured, bail
+    if(reg == 0) return(0);
+    //scan through the linked list until the end of the list or the register is found.
+    //return the pointer.
+    do {
+        if (reg->address == address) return(reg);
+        reg = reg->next;
+	} while(reg);
+	return(0);
 }
 
-bool Modbus::addReg(TAddress address, uint16_t value, uint16_t numregs) {
-   #ifdef MB_MAX_REGS
-    if (_regs.size() + numregs > MB_MAX_REGS) return false;
-   #endif
-    for (uint16_t i = 0; i < numregs; i++) {
-        if (!searchRegister(address + i))
-            _regs.push_back({address + i, value, cbDefault, cbDefault});
+void Modbus::addReg(word address, word value) {
+    TRegister *newreg;
+
+	newreg = (TRegister *) malloc(sizeof(TRegister));
+	newreg->address = address;
+	newreg->value		= value;
+	newreg->next		= 0;
+
+	if(_regs_head == 0) {
+        _regs_head = newreg;
+        _regs_last = _regs_head;
+    } else {
+        //Assign the last register's next pointer to newreg.
+        _regs_last->next = newreg;
+        //then make temp the last register in the list.
+        _regs_last = newreg;
     }
-    //std::sort(_regs.begin(), _regs.end());
-    return true;
 }
 
-bool Modbus::Reg(TAddress address, uint16_t value) {
-    TRegister* reg;
-    reg = searchRegister(address); //search for the register address
-    if (reg) { //if found then assign the register value to the new value.
-        if (cbEnabled) {
-            reg->value = reg->set(reg, value);
-        } else {
-            reg->value = value;
-        }
+bool Modbus::Reg(word address, word value) {
+    TRegister *reg;
+    //search for the register address
+    reg = this->searchRegister(address);
+    //if found then assign the register value to the new value.
+    if (reg) {
+        reg->value = value;
         return true;
-    } else 
+    } else
         return false;
 }
 
-uint16_t Modbus::Reg(TAddress address) {
-    TRegister* reg;
-    reg = searchRegister(address);
+word Modbus::Reg(word address) {
+    TRegister *reg;
+    reg = this->searchRegister(address);
     if(reg)
-        if (cbEnabled) {
-            return reg->get(reg, reg->value);
-        } else {
-            return reg->value;
-        }
+        return(reg->value);
     else
-        return 0;
+        return(0);
 }
 
-bool Modbus::removeReg(TAddress address) {
-    // Empty stub
+void Modbus::addHreg(word offset, word value) {
+    this->addReg(offset + 40001, value);
 }
 
-void Modbus::slavePDU(uint8_t* frame) {
-    FunctionCode fcode  = (FunctionCode)frame[0];
-    uint16_t field1 = (uint16_t)frame[1] << 8 | (uint16_t)frame[2];
-    uint16_t field2 = (uint16_t)frame[3] << 8 | (uint16_t)frame[4];
-    uint16_t bytecount_calc;
+bool Modbus::Hreg(word offset, word value) {
+    return Reg(offset + 40001, value);
+}
+
+word Modbus::Hreg(word offset) {
+    return Reg(offset + 40001);
+}
+
+#ifndef USE_HOLDING_REGISTERS_ONLY
+    void Modbus::addCoil(word offset, bool value) {
+        this->addReg(offset + 1, value?0xFF00:0x0000);
+    }
+
+    void Modbus::addIsts(word offset, bool value) {
+        this->addReg(offset + 10001, value?0xFF00:0x0000);
+    }
+
+    void Modbus::addIreg(word offset, word value) {
+        this->addReg(offset + 30001, value);
+    }
+
+    bool Modbus::Coil(word offset, bool value) {
+        return Reg(offset + 1, value?0xFF00:0x0000);
+    }
+
+    bool Modbus::Ists(word offset, bool value) {
+        return Reg(offset + 10001, value?0xFF00:0x0000);
+    }
+
+    bool Modbus::Ireg(word offset, word value) {
+        return Reg(offset + 30001, value);
+    }
+
+    bool Modbus::Coil(word offset) {
+        if (Reg(offset + 1) == 0xFF00) {
+            return true;
+        } else return false;
+    }
+
+    bool Modbus::Ists(word offset) {
+        if (Reg(offset + 10001) == 0xFF00) {
+            return true;
+        } else return false;
+    }
+
+    word Modbus::Ireg(word offset) {
+        return Reg(offset + 30001);
+    }
+#endif
+
+
+void Modbus::receivePDU(byte* frame) {
+    byte fcode  = frame[0];
+    word field1 = (word)frame[1] << 8 | (word)frame[2];
+    word field2 = (word)frame[3] << 8 | (word)frame[4];
+
     switch (fcode) {
-        case FC_WRITE_REG:
+
+        case MB_FC_WRITE_REG:
             //field1 = reg, field2 = value
-            if (!Hreg(field1, field2)) { //Check Address and execute (reg exists?)
-                exceptionResponse(fcode, EX_ILLEGAL_ADDRESS);
-                break;
-            }
-            if (Hreg(field1) != field2) { //Check for failure
-                exceptionResponse(fcode, EX_SLAVE_FAILURE);
-                break;
-            }
-            _reply = REPLY_ECHO;
+            this->writeSingleRegister(field1, field2);
         break;
 
-        case FC_READ_REGS:
-            //field1 = startreg, field2 = numregs, header len = 3
-            readWords(HREG(field1), field2, fcode);
-        break;
-
-        case FC_WRITE_REGS:
-            //field1 = startreg, field2 = numregs, frame[5] = data lenght, header len = 6
-            if (field2 < 0x0001 || field2 > 0x007B || frame[5] != 2 * field2) { //Check value
-                exceptionResponse(fcode, EX_ILLEGAL_VALUE);
-                break;
-            }
-            for (int k = 0; k < field2; k++) { //Check Address (startreg...startreg + numregs)
-                if (!searchRegister(HREG(field1) + k)) {
-                    exceptionResponse(fcode, EX_ILLEGAL_ADDRESS);
-                    break;
-                }
-            }
-            setMultipleWords(frame + 6, HREG(field1), field2);
-            successResponce(HREG(field1), field2, fcode);
-            _reply = REPLY_NORMAL;
-        break;
-
-        case FC_READ_COILS:
+        case MB_FC_READ_REGS:
             //field1 = startreg, field2 = numregs
-            readBits(COIL(field1), field2, fcode);
+            this->readRegisters(field1, field2);
         break;
 
-        case FC_READ_INPUT_STAT:
+        case MB_FC_WRITE_REGS:
+            //field1 = startreg, field2 = status
+            this->writeMultipleRegisters(frame,field1, field2, frame[5]);
+        break;
+
+        #ifndef USE_HOLDING_REGISTERS_ONLY
+        case MB_FC_READ_COILS:
             //field1 = startreg, field2 = numregs
-            readBits(ISTS(field1), field2, fcode);
+            this->readCoils(field1, field2);
         break;
 
-        case FC_READ_INPUT_REGS:
+        case MB_FC_READ_INPUT_STAT:
             //field1 = startreg, field2 = numregs
-            readWords(IREG(field1), field2, fcode);
+            this->readInputStatus(field1, field2);
         break;
 
-        case FC_WRITE_COIL:
-            //field1 = reg, field2 = status, header len = 3
-            if (field2 != 0xFF00 && field2 != 0x0000) { //Check value (status)
-                exceptionResponse(fcode, EX_ILLEGAL_VALUE);
-                break;
-            }
-            if (!Coil(field1, COIL_BOOL(field2))) { //Check Address and execute (reg exists?)
-                exceptionResponse(fcode, EX_ILLEGAL_ADDRESS);
-                break;
-            }
-            if (Coil(field1) != COIL_BOOL(field2)) { //Check for failure
-                exceptionResponse(fcode, EX_SLAVE_FAILURE);
-                break;
-            }
-            _reply = REPLY_ECHO;
+        case MB_FC_READ_INPUT_REGS:
+            //field1 = startreg, field2 = numregs
+            this->readInputRegisters(field1, field2);
         break;
 
-        case FC_WRITE_COILS:
-            //field1 = startreg, field2 = numregs, frame[5] = bytecount, header len = 6
-            bytecount_calc = field2 / 8;
-            if (field2%8) bytecount_calc++;
-            if (field2 < 0x0001 || field2 > 0x07B0 || frame[5] != bytecount_calc) { //Check registers range and data size maches
-                exceptionResponse(fcode, EX_ILLEGAL_VALUE);
-                break;
-            }
-            for (int k = 0; k < field2; k++) { //Check Address (startreg...startreg + numregs)
-                if (!searchRegister(COIL(field1) + k)) {
-                    exceptionResponse(fcode, EX_ILLEGAL_ADDRESS);
-                    break;
-                }
-            }
-            setMultipleBits(frame + 6, COIL(field1), field2);
-            successResponce(COIL(field1), field2, fcode);
-            _reply = REPLY_NORMAL;
+        case MB_FC_WRITE_COIL:
+            //field1 = reg, field2 = status
+            this->writeSingleCoil(field1, field2);
         break;
 
+        case MB_FC_WRITE_COILS:
+            //field1 = startreg, field2 = numoutputs
+            this->writeMultipleCoils(frame,field1, field2, frame[5]);
+        break;
+
+        #endif
         default:
-            exceptionResponse(fcode, EX_ILLEGAL_FUNCTION);
+            this->exceptionResponse(fcode, MB_EX_ILLEGAL_FUNCTION);
     }
 }
 
-void Modbus::successResponce(TAddress startreg, uint16_t numoutputs, FunctionCode fn) {
-    free(_frame);
-	_len = 5;
-    _frame = (uint8_t*) malloc(_len);
-    _frame[0] = fn;
-    _frame[1] = startreg.address >> 8;
-    _frame[2] = startreg.address & 0x00FF;
-    _frame[3] = numoutputs >> 8;
-    _frame[4] = numoutputs & 0x00FF;
-}
-
-void Modbus::exceptionResponse(FunctionCode fn, ResultCode excode) {
+void Modbus::exceptionResponse(byte fcode, byte excode) {
+    //Clean frame buffer
     free(_frame);
     _len = 2;
-    _frame = (uint8_t*) malloc(_len);
-    _frame[0] = fn + 0x80;
+    _frame = (byte *) malloc(_len);
+    _frame[0] = fcode + 0x80;
     _frame[1] = excode;
-    _reply = REPLY_NORMAL;
+
+    _reply = MB_REPLY_NORMAL;
 }
 
-void Modbus::getMultipleBits(uint8_t* frame, TAddress startreg, uint16_t numregs) {
-    uint8_t bitn = 0;
-    uint16_t i = 0;
-	while (numregs--) {
-		if (BIT_BOOL(Reg(startreg)))
-			bitSet(frame[i], bitn);
-        else
-			bitClear(frame[i], bitn);
-		bitn++; //increment the bit index
-		if (bitn == 8)  {
-            i++;
-            bitn = 0;
-        }
-		startreg++; //increment the register
-	}
-}
-
-void Modbus::getMultipleWords(uint8_t* frame, TAddress startreg, uint16_t numregs) {
-    uint16_t val;
-    uint16_t i = 0;
-	while(numregs--) {
-        val = Reg(startreg + i);  //retrieve the value from the register bank for the current register
-        frame[i * 2]  = val >> 8;       //write the high byte of the register value
-        frame[i * 2 + 1] = val & 0xFF;  //write the low byte of the register value
-        i++;
-	}
-}
-
-void Modbus::readBits(TAddress startreg, uint16_t numregs, FunctionCode fn) {
-    if (numregs < 0x0001 || numregs > 0x07D0) { //Check value (numregs)
-        exceptionResponse(fn, EX_ILLEGAL_VALUE);
+void Modbus::readRegisters(word startreg, word numregs) {
+    //Check value (numregs)
+    if (numregs < 0x0001 || numregs > 0x007D) {
+        this->exceptionResponse(MB_FC_READ_REGS, MB_EX_ILLEGAL_VALUE);
         return;
     }
+
+    //Check Address
+    //*** See comments on readCoils method.
+    if (!this->searchRegister(startreg + 40001)) {
+        this->exceptionResponse(MB_FC_READ_REGS, MB_EX_ILLEGAL_ADDRESS);
+        return;
+    }
+
+
+    //Clean frame buffer
+    free(_frame);
+	_len = 0;
+
+	//calculate the query reply message length
+	//for each register queried add 2 bytes
+	_len = 2 + numregs * 2;
+
+    _frame = (byte *) malloc(_len);
+    if (!_frame) {
+        this->exceptionResponse(MB_FC_READ_REGS, MB_EX_SLAVE_FAILURE);
+        return;
+    }
+
+    _frame[0] = MB_FC_READ_REGS;
+    _frame[1] = _len - 2;   //byte count
+
+    word val;
+    word i = 0;
+	while(numregs--) {
+        //retrieve the value from the register bank for the current register
+        val = this->Hreg(startreg + i);
+        //write the high byte of the register value
+        _frame[2 + i * 2]  = val >> 8;
+        //write the low byte of the register value
+        _frame[3 + i * 2] = val & 0xFF;
+        i++;
+	}
+
+    _reply = MB_REPLY_NORMAL;
+}
+
+void Modbus::writeSingleRegister(word reg, word value) {
+    //No necessary verify illegal value (EX_ILLEGAL_VALUE) - because using word (0x0000 - 0x0FFFF)
+    //Check Address and execute (reg exists?)
+    if (!this->Hreg(reg, value)) {
+        this->exceptionResponse(MB_FC_WRITE_REG, MB_EX_ILLEGAL_ADDRESS);
+        return;
+    }
+
+    //Check for failure
+    if (this->Hreg(reg) != value) {
+        this->exceptionResponse(MB_FC_WRITE_REG, MB_EX_SLAVE_FAILURE);
+        return;
+    }
+
+    _reply = MB_REPLY_ECHO;
+}
+
+void Modbus::writeMultipleRegisters(byte* frame,word startreg, word numoutputs, byte bytecount) {
+    //Check value
+    if (numoutputs < 0x0001 || numoutputs > 0x007B || bytecount != 2 * numoutputs) {
+        this->exceptionResponse(MB_FC_WRITE_REGS, MB_EX_ILLEGAL_VALUE);
+        return;
+    }
+
+    //Check Address (startreg...startreg + numregs)
+    for (int k = 0; k < numoutputs; k++) {
+        if (!this->searchRegister(startreg + 40001 + k)) {
+            this->exceptionResponse(MB_FC_WRITE_REGS, MB_EX_ILLEGAL_ADDRESS);
+            return;
+        }
+    }
+
+    //Clean frame buffer
+    free(_frame);
+	_len = 5;
+    _frame = (byte *) malloc(_len);
+    if (!_frame) {
+        this->exceptionResponse(MB_FC_WRITE_REGS, MB_EX_SLAVE_FAILURE);
+        return;
+    }
+
+    _frame[0] = MB_FC_WRITE_REGS;
+    _frame[1] = startreg >> 8;
+    _frame[2] = startreg & 0x00FF;
+    _frame[3] = numoutputs >> 8;
+    _frame[4] = numoutputs & 0x00FF;
+
+    word val;
+    word i = 0;
+	while(numoutputs--) {
+        val = (word)frame[6+i*2] << 8 | (word)frame[7+i*2];
+        this->Hreg(startreg + i, val);
+        i++;
+	}
+
+    _reply = MB_REPLY_NORMAL;
+}
+
+#ifndef USE_HOLDING_REGISTERS_ONLY
+void Modbus::readCoils(word startreg, word numregs) {
+    //Check value (numregs)
+    if (numregs < 0x0001 || numregs > 0x07D0) {
+        this->exceptionResponse(MB_FC_READ_COILS, MB_EX_ILLEGAL_VALUE);
+        return;
+    }
+
     //Check Address
     //Check only startreg. Is this correct?
     //When I check all registers in range I got errors in ScadaBR
     //I think that ScadaBR request more than one in the single request
     //when you have more then one datapoint configured from same type.
-    if (!searchRegister(startreg)) {
-        exceptionResponse(fn, EX_ILLEGAL_ADDRESS);
+    if (!this->searchRegister(startreg + 1)) {
+        this->exceptionResponse(MB_FC_READ_COILS, MB_EX_ILLEGAL_ADDRESS);
         return;
     }
+
+    //Clean frame buffer
     free(_frame);
+	_len = 0;
+
     //Determine the message length = function type, byte count and
 	//for each group of 8 registers the message length increases by 1
 	_len = 2 + numregs/8;
 	if (numregs%8) _len++; //Add 1 to the message length for the partial byte.
-    _frame = (uint8_t*) malloc(_len);
+
+    _frame = (byte *) malloc(_len);
     if (!_frame) {
-        exceptionResponse(fn, EX_SLAVE_FAILURE);
+        this->exceptionResponse(MB_FC_READ_COILS, MB_EX_SLAVE_FAILURE);
         return;
     }
-    _frame[0] = fn;
+
+    _frame[0] = MB_FC_READ_COILS;
     _frame[1] = _len - 2; //byte count (_len - function code and byte count)
-	_frame[_len - 1] = 0;  //Clean last probably partial byte
-    getMultipleBits(_frame+2, startreg, numregs);
-    _reply = REPLY_NORMAL;
+
+    byte bitn = 0;
+    word totregs = numregs;
+    word i;
+	while (numregs--) {
+        i = (totregs - numregs) / 8;
+		if (this->Coil(startreg))
+			bitSet(_frame[2+i], bitn);
+		else
+			bitClear(_frame[2+i], bitn);
+		//increment the bit index
+		bitn++;
+		if (bitn == 8) bitn = 0;
+		//increment the register
+		startreg++;
+	}
+
+    _reply = MB_REPLY_NORMAL;
 }
 
-void Modbus::readWords(TAddress startreg, uint16_t numregs, FunctionCode fn) {
+void Modbus::readInputStatus(word startreg, word numregs) {
+    //Check value (numregs)
+    if (numregs < 0x0001 || numregs > 0x07D0) {
+        this->exceptionResponse(MB_FC_READ_INPUT_STAT, MB_EX_ILLEGAL_VALUE);
+        return;
+    }
+
+    //Check Address
+    //*** See comments on readCoils method.
+    if (!this->searchRegister(startreg + 10001)) {
+        this->exceptionResponse(MB_FC_READ_COILS, MB_EX_ILLEGAL_ADDRESS);
+        return;
+    }
+
+    //Clean frame buffer
+    free(_frame);
+	_len = 0;
+
+    //Determine the message length = function type, byte count and
+	//for each group of 8 registers the message length increases by 1
+	_len = 2 + numregs/8;
+	if (numregs%8) _len++; //Add 1 to the message length for the partial byte.
+
+    _frame = (byte *) malloc(_len);
+    if (!_frame) {
+        this->exceptionResponse(MB_FC_READ_INPUT_STAT, MB_EX_SLAVE_FAILURE);
+        return;
+    }
+
+    _frame[0] = MB_FC_READ_INPUT_STAT;
+    _frame[1] = _len - 2;
+
+    byte bitn = 0;
+    word totregs = numregs;
+    word i;
+	while (numregs--) {
+        i = (totregs - numregs) / 8;
+		if (this->Ists(startreg))
+			bitSet(_frame[2+i], bitn);
+		else
+			bitClear(_frame[2+i], bitn);
+		//increment the bit index
+		bitn++;
+		if (bitn == 8) bitn = 0;
+		//increment the register
+		startreg++;
+	}
+
+    _reply = MB_REPLY_NORMAL;
+}
+
+void Modbus::readInputRegisters(word startreg, word numregs) {
     //Check value (numregs)
     if (numregs < 0x0001 || numregs > 0x007D) {
-        exceptionResponse(fn, EX_ILLEGAL_VALUE);
+        this->exceptionResponse(MB_FC_READ_INPUT_REGS, MB_EX_ILLEGAL_VALUE);
         return;
     }
-    if (!searchRegister(startreg)) { //Check Address
-        exceptionResponse(fn, EX_ILLEGAL_ADDRESS);
+
+    //Check Address
+    //*** See comments on readCoils method.
+    if (!this->searchRegister(startreg + 30001)) {
+        this->exceptionResponse(MB_FC_READ_COILS, MB_EX_ILLEGAL_ADDRESS);
         return;
     }
+
+    //Clean frame buffer
     free(_frame);
-	_len = 2 + numregs * 2; //calculate the query reply message length. 2 bytes per register + 2 bytes for header
-    _frame = (uint8_t*) malloc(_len);
+	_len = 0;
+
+	//calculate the query reply message length
+	//for each register queried add 2 bytes
+	_len = 2 + numregs * 2;
+
+    _frame = (byte *) malloc(_len);
     if (!_frame) {
-        exceptionResponse(fn, EX_SLAVE_FAILURE);
+        this->exceptionResponse(MB_FC_READ_INPUT_REGS, MB_EX_SLAVE_FAILURE);
         return;
     }
-    _frame[0] = fn;
-    _frame[1] = _len - 2;   //byte count
-    getMultipleWords(_frame + 2, startreg, numregs);
-    _reply = REPLY_NORMAL;
-}
 
-void Modbus::setMultipleBits(uint8_t* frame, TAddress startreg, uint16_t numoutputs) {
-    uint8_t bitn = 0;
-    uint16_t i = 0;
-	while (numoutputs--) {
-        Reg(startreg, BIT_VAL(bitRead(frame[i], bitn)));
-        bitn++;     //increment the bit index
-        if (bitn == 8) {
-            i++;
-            bitn = 0;
-        }
-        startreg++; //increment the register
-	}
-}
+    _frame[0] = MB_FC_READ_INPUT_REGS;
+    _frame[1] = _len - 2;
 
-void Modbus::setMultipleWords(uint8_t* frame, TAddress startreg, uint16_t numregs) {
-    uint16_t val;
-    uint16_t i = 0;
+    word val;
+    word i = 0;
 	while(numregs--) {
-        val = (uint16_t)frame[i*2] << 8 | (uint16_t)frame[i*2 + 1];
-        Reg(startreg + i, val);
+        //retrieve the value from the register bank for the current register
+        val = this->Ireg(startreg + i);
+        //write the high byte of the register value
+        _frame[2 + i * 2]  = val >> 8;
+        //write the low byte of the register value
+        _frame[3 + i * 2] = val & 0xFF;
         i++;
 	}
+
+    _reply = MB_REPLY_NORMAL;
 }
 
-bool Modbus::onGet(TAddress address, cbModbus cb, uint16_t numregs) {
-	TRegister* reg;
-	bool atLeastOne = false;
-	while (numregs > 0) {
-		reg = searchRegister(address);
-		if (reg) {
-			reg->get = cb;
-			atLeastOne = true;
-		}
-		address++;
-		numregs--;
-	}
-	return atLeastOne;
-}
-bool Modbus::onSet(TAddress address, cbModbus cb, uint16_t numregs) {
-	TRegister* reg;
-	bool atLeastOne = false;
-	while (numregs > 0) {
-		reg = searchRegister(address);
-		if (reg) {
-			reg->set = cb;
-			atLeastOne = true;
-		}
-		address++;
-		numregs--;
-	}
-	return atLeastOne;
+void Modbus::writeSingleCoil(word reg, word status) {
+    //Check value (status)
+    if (status != 0xFF00 && status != 0x0000) {
+        this->exceptionResponse(MB_FC_WRITE_COIL, MB_EX_ILLEGAL_VALUE);
+        return;
+    }
+
+    //Check Address and execute (reg exists?)
+    if (!this->Coil(reg, (bool)status)) {
+        this->exceptionResponse(MB_FC_WRITE_COIL, MB_EX_ILLEGAL_ADDRESS);
+        return;
+    }
+
+    //Check for failure
+    if (this->Coil(reg) != (bool)status) {
+        this->exceptionResponse(MB_FC_WRITE_COIL, MB_EX_SLAVE_FAILURE);
+        return;
+    }
+
+    _reply = MB_REPLY_ECHO;
 }
 
-bool Modbus::readSlave(TAddress address, uint16_t numregs, FunctionCode fn) {
-	free(_frame);
+void Modbus::writeMultipleCoils(byte* frame,word startreg, word numoutputs, byte bytecount) {
+    //Check value
+    word bytecount_calc = numoutputs / 8;
+    if (numoutputs%8) bytecount_calc++;
+    if (numoutputs < 0x0001 || numoutputs > 0x07B0 || bytecount != bytecount_calc) {
+        this->exceptionResponse(MB_FC_WRITE_COILS, MB_EX_ILLEGAL_VALUE);
+        return;
+    }
+
+    //Check Address (startreg...startreg + numregs)
+    for (int k = 0; k < numoutputs; k++) {
+        if (!this->searchRegister(startreg + 1 + k)) {
+            this->exceptionResponse(MB_FC_WRITE_COILS, MB_EX_ILLEGAL_ADDRESS);
+            return;
+        }
+    }
+
+    //Clean frame buffer
+    free(_frame);
 	_len = 5;
-	_frame = (uint8_t*) malloc(_len);
-	_frame[0] = fn;
-	_frame[1] = address.address >> 8;
-	_frame[2] = address.address & 0x00FF;
-	_frame[3] = numregs >> 8;
-	_frame[4] = numregs & 0x00FF;
-	return true;
-}
-
-bool Modbus::writeSlaveBits(TAddress startreg, uint16_t numregs, FunctionCode fn) {
-	free(_frame);
-	_len = 6 + numregs/8;
-	if (numregs%8) _len++; //Add 1 to the message length for the partial byte.
-    _frame = (uint8_t*) malloc(_len);
-    if (_frame) {
-	    _frame[0] = fn;
-	    _frame[1] = startreg.address >> 8;
-	    _frame[2] = startreg.address & 0x00FF;
-	    _frame[3] = numregs >> 8;
-	    _frame[4] = numregs & 0x00FF;
-        _frame[5] = _len - 6;
-        _frame[_len - 1] = 0;  //Clean last probably partial byte
-        getMultipleBits(_frame + 6, startreg, numregs);
-        _reply = REPLY_NORMAL;
-        return true;
+    _frame = (byte *) malloc(_len);
+    if (!_frame) {
+        this->exceptionResponse(MB_FC_WRITE_COILS, MB_EX_SLAVE_FAILURE);
+        return;
     }
-    _reply = REPLY_OFF;
-	return false;
-}
 
-bool Modbus::writeSlaveWords(TAddress startreg, uint16_t numregs, FunctionCode fn) {
-	free(_frame);
-	_len = 6 + 2 * numregs;
-	_frame = (uint8_t*) malloc(_len);
-    if (_frame) {
-	    _frame[0] = fn;
-	    _frame[1] = startreg.address >> 8;
-	    _frame[2] = startreg.address & 0x00FF;
-	    _frame[3] = numregs >> 8;
-	    _frame[4] = numregs & 0x00FF;
-        _frame[5] = _len - 6;
-        getMultipleWords(_frame + 6, startreg, numregs);
-        return true;
-    }
-    _reply = REPLY_OFF;
-	return false;    
-}
+    _frame[0] = MB_FC_WRITE_COILS;
+    _frame[1] = startreg >> 8;
+    _frame[2] = startreg & 0x00FF;
+    _frame[3] = numoutputs >> 8;
+    _frame[4] = numoutputs & 0x00FF;
 
-void Modbus::masterPDU(uint8_t* frame, uint8_t* sourceFrame) {
-    uint8_t fcode  = frame[0];
-    _reply = 0;
-    if ((fcode & 0x80) != 0) {
-	    _reply = _frame[1];
-	    return;
-    }
-    uint16_t field1 = (uint16_t)sourceFrame[1] << 8 | (uint16_t)sourceFrame[2];
-    uint16_t field2 = (uint16_t)sourceFrame[3] << 8 | (uint16_t)sourceFrame[4];
-    uint8_t bytecount_calc;
-    switch (fcode) {
-        case FC_READ_REGS:
-            //field1 = startreg, field2 = numregs, frame[1] = data lenght, header len = 2
-            if (frame[1] != 2 * field2) { //Check if data size matches
-                _reply = EX_DATA_MISMACH;
-                break;
-            }
-            setMultipleWords(frame + 2, HREG(field1), field2);
-        break;
-        case FC_READ_COILS:
-            //field1 = startreg, field2 = numregs, frame[1] = data length, header len = 2
-            bytecount_calc = field2 / 8;
-            if (field2%8) bytecount_calc++;
-            if (frame[1] != bytecount_calc) { // check if data size matches
-                _reply = EX_DATA_MISMACH;
-                break;
-            }
-            setMultipleBits(frame + 2, COIL(field1), field2);
-        break;
-        case FC_READ_INPUT_STAT:
-            //field1 = startreg, field2 = numregs, frame[1] = data length, header len = 2
-            bytecount_calc = field2 / 8;
-            if (field2%8) bytecount_calc++;
-            if (frame[1] != bytecount_calc) { // check if data size matches
-                _reply = EX_DATA_MISMACH;
-                break;
-            }
-            setMultipleBits(frame + 2, ISTS(field1), field2);
-        break;
-        case FC_READ_INPUT_REGS:
-            //field1 = startreg, field2 = status, frame[1] = data lenght, header len = 2
-            if (frame[1] != 2 * field2) { //Check if data size matches
-                _reply = EX_DATA_MISMACH;
-                break;
-            }
-            setMultipleWords(frame + 2, IREG(field1), field2);
-        break;
-        case FC_WRITE_REG:
-        break;
-        case FC_WRITE_REGS:
-        break;
-        case FC_WRITE_COIL:
-        break;
-        case FC_WRITE_COILS:
-        break;
-        default:
-		_reply = EX_GENERAL_FAILURE;
-    }
-}
+    byte bitn = 0;
+    word totoutputs = numoutputs;
+    word i;
+	while (numoutputs--) {
+        i = (totoutputs - numoutputs) / 8;
+        this->Coil(startreg, bitRead(frame[6+i], bitn));
+        //increment the bit index
+        bitn++;
+        if (bitn == 8) bitn = 0;
+        //increment the register
+        startreg++;
+	}
 
-void Modbus::cbEnable(bool state) {
-    cbEnabled = state;
+    _reply = MB_REPLY_NORMAL;
 }
+#endif
+
+
+
