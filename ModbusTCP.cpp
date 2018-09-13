@@ -4,20 +4,20 @@
 */
 #include "ModbusTCP.h"
 
-extern uint8_t *buffer;
+uint8_t *buffer = new uint8_t[64];
 extern Serial pc;
 uint16_t ret;
 
-ModbusTCP::ModbusTCP(NetworkInterface* _net):network(_net)
+ModbusTCP::ModbusTCP(NetworkInterface* _net) : network(_net)
 {
-    _server.open(network);
+    network = NetworkInterface::get_default_instance();
 }
 
 void ModbusTCP::server_open(uint16_t port)
 {
-    
+    _server.open(network);
     _server.bind(network->get_ip_address(),port);
-    _server.listen(5);
+    _server.listen();
 }
 
 void ModbusTCP::server_stop()
@@ -27,19 +27,33 @@ void ModbusTCP::server_stop()
 
 void ModbusTCP::server_run()
 {
-    _server.accept(&_socket, &_address);
-    ret = _socket.recv(&buffer,sizeof(buffer)-1);
-    buffer[ret] = '\0';
+    nsapi_size_or_error_t r;
 
-    pc.printf("%d\r\r\n",buffer[1]);
-    // remaining = 12;
-    // rcount = 0;
-    // p = buffer;
-    // while (0 < (r = _socket.recv(p, remaining))) {
-    //     p += r;
-    //     rcount += r;
-    //     remaining -= r;
+    while(true)
+    {
+        _server.accept(&_socket, &_address);
+        pc.printf("Accept \r\r\n");
+        _socket.send("Hello !!\r\r\n",11);
+        pc.printf("Send \r\r\n");
+
+        while (0 < (r = _socket.recv(buffer,sizeof(buffer)) )) {
+            
+            pc.printf("Recv: %s Size: %d\r\r\n",buffer,r);
+        }
+
+        _socket.close();
+        pc.printf("Close \r\r\n");
+    }
+
+    // while(true)
+    // {
+    //     _server.accept(&_socket, &_address);
+    //     int n = _socket.recv(buffer, sizeof(buffer));
+    //     pc.printf("%s\r\r\n",buffer);
+    //     delete[] buffer;
     // }
+    
+
 
 //     if (_server.accept(&_socket, &_address) == NSAPI_ERROR_OK) {
 //         if (client.connected())
